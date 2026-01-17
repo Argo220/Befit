@@ -1,32 +1,38 @@
-
-using BeFit.Data;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using TextCommunicator.Data;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// SQLite – lokalny plik bazy
-builder.Services.AddDbContext<ApplicationDbContext>(options =>
-    options.UseSqlite(builder.Configuration.GetConnectionString("DefaultConnection")!));
-
-builder.Services.AddDatabaseDeveloperPageExceptionFilter();
-
-builder.Services.AddDefaultIdentity<IdentityUser>(options =>
-{
-    options.SignIn.RequireConfirmedAccount = false;
-})
-.AddRoles<IdentityRole>()
-.AddEntityFrameworkStores<ApplicationDbContext>();
-
 builder.Services.AddControllersWithViews();
+
+// SQLite database.db in app folder (TextCommunicator)
+var dbPath = Path.Combine(builder.Environment.ContentRootPath, "database.db");
+builder.Services.AddDbContext<ApplicationDbContext>(o =>
+    o.UseSqlite($"Data Source={dbPath}")
+);
+
+builder.Services
+    .AddIdentity<ApplicationUser, IdentityRole>(opt =>
+    {
+        opt.Password.RequireNonAlphanumeric = false;
+        opt.Password.RequireUppercase = false;
+        opt.Password.RequireLowercase = false;
+        opt.Password.RequireDigit = false;
+        opt.Password.RequiredLength = 6;
+    })
+    .AddEntityFrameworkStores<ApplicationDbContext>()
+    .AddDefaultTokenProviders();
+
+builder.Services.ConfigureApplicationCookie(opt =>
+{
+    opt.LoginPath = "/Account/Login";
+    opt.AccessDeniedPath = "/Account/AccessDenied";
+});
 
 var app = builder.Build();
 
-if (app.Environment.IsDevelopment())
-{
-    app.UseDeveloperExceptionPage();
-}
-else
+if (!app.Environment.IsDevelopment())
 {
     app.UseExceptionHandler("/Home/Error");
     app.UseHsts();
@@ -40,24 +46,39 @@ app.UseRouting();
 app.UseAuthentication();
 app.UseAuthorization();
 
-app.MapRazorPages();
+// Ensure DB + seed roles/admin
+await EnsureDbAndSeedAsync(app);
 
 app.MapControllerRoute(
     name: "default",
-    pattern: "{controller=Home}/{action=Index}/{id?}");
-
-// Ensure database and seed roles
-using (var scope = app.Services.CreateScope())
-{
-    var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-    db.Database.EnsureCreated();
-
-    var roleManager = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole>>();
-    var adminRole = "Admin";
-    if (!await roleManager.RoleExistsAsync(adminRole))
-    {
-        await roleManager.CreateAsync(new IdentityRole(adminRole));
-    }
-}
+    pattern: "{controller=Chat}/{action=Index}/{id?}");
 
 app.Run();
+
+static async Task EnsureDbAndSeedAsync(WebApplication app)
+{
+    using var scope = app.Services.CreateScope();
+    var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+    await db.Database.EnsureCreatedAsync();
+
+    var roleMgr = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole>>();
+    var userMgr = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
+
+    foreach (var r in new[] { "Admin", "User" })
+        if (!await roleMgr.RoleExistsAsync(r))
+            await roleMgr.CreateAsync(new IdentityRole(r));
+
+    // default admin
+    var adminEmail = "admin@tc.local";
+    var admin = await userMgr.FindByEmailAsync(adminEmail);
+    if (admin is null)
+    {
+        admin = new ApplicationUser { UserName = adminEmail, Email = adminEmail, EmailConfirmed = true };
+        await userMgr.CreateAsync(admin, "admin123");
+    }
+
+    // ensure admin role even if user already existed in database
+    if (!await userMgr.IsInRoleAsync(admin, "Admin"))
+        await userMgr.AddToRoleAsync(admin, "Admin");
+
+}

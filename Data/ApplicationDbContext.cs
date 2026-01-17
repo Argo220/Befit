@@ -1,37 +1,33 @@
-
-using BeFit.Models;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 
-namespace BeFit.Data;
+namespace TextCommunicator.Data;
 
-public class ApplicationDbContext : IdentityDbContext
+public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
 {
-    public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options)
-        : base(options) { }
+    public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options) : base(options) { }
 
-    public DbSet<ExerciseType> ExerciseTypes => Set<ExerciseType>();
-    public DbSet<TrainingSession> TrainingSessions => Set<TrainingSession>();
-    public DbSet<PerformedExercise> PerformedExercises => Set<PerformedExercise>();
+    public DbSet<Message> Messages => Set<Message>();
+    public DbSet<Group> Groups => Set<Group>();
+    public DbSet<GroupMember> GroupMembers => Set<GroupMember>();
+    public DbSet<GroupMessage> GroupMessages => Set<GroupMessage>();
 
-    protected override void OnModelCreating(ModelBuilder builder)
+    protected override void OnModelCreating(ModelBuilder b)
     {
-        base.OnModelCreating(builder);
+        base.OnModelCreating(b);
 
-        builder.Entity<PerformedExercise>()
-            .Property(p => p.LoadKg)
-            .HasPrecision(6, 2);
-
-        builder.Entity<PerformedExercise>()
-            .HasOne(p => p.TrainingSession)
-            .WithMany(s => s.PerformedExercises)
-            .HasForeignKey(p => p.TrainingSessionId)
-            .OnDelete(DeleteBehavior.Cascade);
-
-        builder.Entity<PerformedExercise>()
-            .HasOne(p => p.ExerciseType)
-            .WithMany()
-            .HasForeignKey(p => p.ExerciseTypeId)
+        b.Entity<Message>()
+            .HasOne(m => m.Sender).WithMany()
+            .HasForeignKey(m => m.SenderId)
             .OnDelete(DeleteBehavior.Restrict);
+
+        b.Entity<Message>()
+            .HasOne(m => m.Recipient).WithMany()
+            .HasForeignKey(m => m.RecipientId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        b.Entity<GroupMember>()
+            .HasIndex(x => new { x.GroupId, x.UserId })
+            .IsUnique();
     }
 }
